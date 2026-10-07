@@ -96,54 +96,119 @@ async function loadLive() {
 }
 
 // ---------- 간이 지도 ----------
+const MAP_W = 420, MAP_H = 330, MAP_PAD = 34;
+
+// 빈자리 상태에 따른 점 색
+function dotColor(pk) {
+  const l = liveOf(pk);
+  if (!l || !Number.isFinite(l.free)) return "#2b6cb0";
+  const ratio = l.capacity ? l.free / l.capacity : 1;
+  return l.free <= 0 ? "#b3261e" : ratio < 0.1 ? "#d97706" : "#1f8a4c";
+}
+
 function drawMini() {
   const svg = $("mini-map");
-  if (!state.center) { svg.innerHTML = ""; return; }
+  const W = MAP_W, H = MAP_H;
+  const cx = W / 2, cy = H / 2;
 
-  const W = 400, H = 300, pad = 30;
+  const parts = [
+    '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#eaf0f6"/>',
+  ];
+
+  if (!state.center) {
+    parts.push('<text x="' + cx + '" y="' + cy +
+      '" text-anchor="middle" font-size="13" fill="#5f6b7a">위에서 "현 위치로 찾기"를 누르면 여기에 표시됩니다</text>');
+    svg.innerHTML = parts.join("");
+    return;
+  }
+
   const r = state.radius;
   const span = r * 1.18;
   const mPerDegLat = 111320;
   const mPerDegLng = 111320 * Math.cos((state.center.lat * Math.PI) / 180);
-  const scale = Math.min(W - pad * 2, H - pad * 2) / (span * 2);
+  const scale = Math.min(W - MAP_PAD * 2, H - MAP_PAD * 2) / (span * 2);
 
-  const px = (lng) => W / 2 + (lng - state.center.lng) * mPerDegLng * scale;
-  const py = (lat) => H / 2 - (lat - state.center.lat) * mPerDegLat * scale;
+  const px = (lng) => cx + (lng - state.center.lng) * mPerDegLng * scale;
+  const py = (lat) => cy - (lat - state.center.lat) * mPerDegLat * scale;
+  const mLabel = (m) => (m >= 1000 ? m / 1000 + "km" : m + "m");
 
-  const label = r >= 1000 ? r / 1000 + "km" : r + "m";
-  const parts = [
-    '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#eef2f7"/>',
-    // 범위 안쪽 절반 지점 안내선
-    '<circle cx="' + W / 2 + '" cy="' + H / 2 + '" r="' + (r / 2) * scale +
-      '" fill="none" stroke="#c7d2e0" stroke-width="1" stroke-dasharray="3 4"/>',
-    '<circle cx="' + W / 2 + '" cy="' + H / 2 + '" r="' + r * scale +
-      '" fill="#2b6cb0" fill-opacity="0.07" stroke="#2b6cb0" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="5 4"/>',
-    '<text x="' + W / 2 + '" y="' + Math.max(12, H / 2 - r * scale - 6) +
-      '" text-anchor="middle" font-size="11" fill="#5f6b7a">' + label + "</text>",
-  ];
+  // 바탕 격자 (100m 또는 500m 간격)
+  const gridStep = r <= 500 ? 100 : r <= 1000 ? 250 : 500;
+  const gridPx = gridStep * scale;
+  parts.push('<g stroke="#dbe3ec" stroke-width="1">');
+  for (let x = cx % gridPx; x < W; x += gridPx) parts.push('<line x1="' + x + '" y1="0" x2="' + x + '" y2="' + H + '"/>');
+  for (let y = cy % gridPx; y < H; y += gridPx) parts.push('<line x1="0" y1="' + y + '" x2="' + W + '" y2="' + y + '"/>');
+  parts.push("</g>");
+
+  // 거리 고리 (반경의 1/3, 2/3, 전체)
+  for (const frac of [1 / 3, 2 / 3, 1]) {
+    const rr = r * frac;
+    const last = frac === 1;
+    parts.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + rr * scale +
+      '" fill="' + (last ? "#2b6cb0" : "none") + '" fill-opacity="' + (last ? 0.06 : 0) +
+      '" stroke="#2b6cb0" stroke-opacity="' + (last ? 0.65 : 0.3) +
+      '" stroke-width="' + (last ? 1.6 : 1) + '" stroke-dasharray="' + (last ? "6 4" : "3 4") + '"/>');
+    parts.push('<text x="' + cx + '" y="' + (cy - rr * scale - 4) +
+      '" text-anchor="middle" font-size="10" fill="#7a8696">' + mLabel(Math.round(rr)) + "</text>");
+  }
+
+  // 십자 기준선
+  parts.push('<line x1="' + cx + '" y1="' + MAP_PAD / 2 + '" x2="' + cx + '" y2="' + (H - MAP_PAD / 2) +
+    '" stroke="#c3cedb" stroke-width="1"/>');
+  parts.push('<line x1="' + MAP_PAD / 2 + '" y1="' + cy + '" x2="' + (W - MAP_PAD / 2) + '" y2="' + cy +
+    '" stroke="#c3cedb" stroke-width="1"/>');
+
+  // 북쪽 표시
+  parts.push('<text x="' + cx + '" y="' + (MAP_PAD / 2 - 2) + '" text-anchor="middle" font-size="11" font-weight="700" fill="#7a8696">N ↑</text>');
+
+  // 주차장 점 — 기준 위치와 선으로 이어 거리를 느끼게 한다
+  state.nearby.forEach((pk) => {
+    const x = px(pk.lng), y = py(pk.lat);
+    parts.push('<line x1="' + cx + '" y1="' + cy + '" x2="' + x + '" y2="' + y +
+      '" stroke="#9fb3c8" stroke-width="0.8" stroke-opacity="0.55"/>');
+  });
 
   state.nearby.forEach((pk, i) => {
     const x = px(pk.lng), y = py(pk.lat);
     const l = liveOf(pk);
-    // 빈자리 상태에 따라 점 색을 달리한다
-    let fill = "#2b6cb0";
-    if (l && Number.isFinite(l.free)) {
-      const ratio = l.capacity ? l.free / l.capacity : 1;
-      fill = l.free <= 0 ? "#b3261e" : ratio < 0.1 ? "#d97706" : "#1f8a4c";
-    }
-    parts.push('<circle cx="' + x + '" cy="' + y + '" r="8" fill="' + fill +
-      '" stroke="#fff" stroke-width="2"><title>' + esc(pk.name) + " · " + Math.round(pk.dist) + "m" +
+    parts.push('<circle cx="' + x + '" cy="' + y + '" r="9" fill="' + dotColor(pk) +
+      '" stroke="#fff" stroke-width="2" class="pk-dot" data-idx="' + i + '"><title>' +
+      esc(pk.name) + " · " + Math.round(pk.dist) + "m" +
       (l && Number.isFinite(l.free) ? " · 빈자리 " + l.free + "면" : "") + "</title></circle>");
     parts.push('<text x="' + x + '" y="' + (y + 3.5) +
-      '" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fff" pointer-events="none">' + (i + 1) + "</text>");
+      '" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" pointer-events="none">' + (i + 1) + "</text>");
   });
 
-  parts.push('<circle cx="' + W / 2 + '" cy="' + H / 2 + '" r="8" fill="#b3261e" stroke="#fff" stroke-width="3"><title>' +
+  // 기준 위치
+  parts.push('<circle cx="' + cx + '" cy="' + cy + '" r="14" fill="#b3261e" fill-opacity="0.18"/>');
+  parts.push('<circle cx="' + cx + '" cy="' + cy + '" r="7" fill="#b3261e" stroke="#fff" stroke-width="3"><title>' +
     esc(state.center.label) + "</title></circle>");
-  parts.push('<text x="' + W / 2 + '" y="' + (H / 2 + 24) +
-    '" text-anchor="middle" font-size="11" font-weight="700" fill="#b3261e">' + esc(state.center.label) + "</text>");
+  parts.push('<text x="' + (cx + 12) + '" y="' + (cy + 4) +
+    '" font-size="11" font-weight="700" fill="#b3261e">' + esc(state.center.label) + "</text>");
+
+  // 축척 막대
+  const barM = gridStep;
+  const barPx = barM * scale;
+  const bx = W - MAP_PAD / 2 - barPx, by = H - 14;
+  parts.push('<line x1="' + bx + '" y1="' + by + '" x2="' + (bx + barPx) + '" y2="' + by + '" stroke="#5f6b7a" stroke-width="2"/>');
+  parts.push('<line x1="' + bx + '" y1="' + (by - 4) + '" x2="' + bx + '" y2="' + (by + 4) + '" stroke="#5f6b7a" stroke-width="2"/>');
+  parts.push('<line x1="' + (bx + barPx) + '" y1="' + (by - 4) + '" x2="' + (bx + barPx) + '" y2="' + (by + 4) + '" stroke="#5f6b7a" stroke-width="2"/>');
+  parts.push('<text x="' + (bx + barPx / 2) + '" y="' + (by - 7) +
+    '" text-anchor="middle" font-size="10" fill="#5f6b7a">' + mLabel(barM) + "</text>");
 
   svg.innerHTML = parts.join("");
+
+  // 점을 누르면 그 주차장으로 요금 계산기를 채운다
+  svg.querySelectorAll(".pk-dot").forEach((el) => {
+    el.addEventListener("click", () => {
+      const pk = state.nearby[Number(el.dataset.idx)];
+      if (!pk) return;
+      $("calc-parking").value = pk.id;
+      if (!$("calc-time").value) setCalcTimeNow();
+      runCalc();
+      $("calc-card").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 }
 
 // ---------- 주변 찾기 ----------
@@ -329,6 +394,15 @@ async function main() {
   await loadLive();
   fillCalcSelect();
   renderList();
+  drawMini();            // 아직 위치가 없어도 지도 자리를 그려 둔다
+
+  // 위치 권한이 이미 허용돼 있으면 누르지 않아도 바로 찾아 준다
+  if (navigator.permissions) {
+    try {
+      const p = await navigator.permissions.query({ name: "geolocation" });
+      if (p.state === "granted") useHere();
+    } catch { /* 지원하지 않는 브라우저는 버튼으로 */ }
+  }
 
   // 요금은 1분마다 다시 계산하고, 실시간 빈자리 파일은 5분마다 새로 읽는다
   setInterval(runCalc, 60000);

@@ -72,9 +72,8 @@ button.primary:hover { filter: brightness(1.08); }
 
 /* 지도 */
 #map-wrap { position: relative; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #eef2f7; }
-#map { width: 100%; height: 340px; display: none; }
-#map-fallback { padding: 8px; }
-#mini-map { width: 100%; height: 300px; display: block; background: #eef2f7; border-radius: 8px; }
+#mini-map { width: 100%; height: 330px; display: block; background: #eaf0f6; border-radius: 8px; }
+#mini-map .pk-dot { cursor: pointer; }
 .map-note { margin: 8px 2px 2px; font-size: 12.5px; color: var(--muted); }
 
 /* 목록 */
