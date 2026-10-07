@@ -56,8 +56,24 @@ const live = await seoulAll("GetParkingInfo");
 // 시영 실시간 데이터를 이름으로 붙인다 (코드 체계가 서로 달라 이름으로 맞춘다)
 const liveByName = new Map(live.map((r) => [r.PKLT_NM.trim(), r]));
 
-const out = [];
+// GetParkInfo 는 주차 구획 한 칸이 한 행이라 같은 주차장이 여러 번 나온다.
+// 주차장 코드(PKLT_CD)로 묶고, 주차면수는 행 수만큼 더해 실제 규모를 구한다.
+const groups = new Map();
 for (const r of base) {
+  const code = String(r.PKLT_CD);
+  const g = groups.get(code);
+  if (!g) {
+    groups.set(code, { rep: r, slots: num(r.TPKCT) || 1 });
+  } else {
+    g.slots += num(r.TPKCT) || 1;
+    // 좌표가 비어 있던 대표 행이면 좌표가 있는 행으로 바꿔 둔다
+    if (!(num(g.rep.LAT) && num(g.rep.LOT)) && num(r.LAT) && num(r.LOT)) g.rep = r;
+  }
+}
+console.log(`  주차장 코드로 묶음: ${base.length}행 → ${groups.size}곳`);
+
+const out = [];
+for (const { rep: r, slots } of groups.values()) {
   const name = r.PKLT_NM.trim();
   const l = liveByName.get(name);
   const lat = num(r.LAT), lng = num(r.LOT);
@@ -71,7 +87,7 @@ for (const r of base) {
     lng: lng || null,
     kind: r.PKLT_KND_NM || null,          // 노외/노상
     operKind: r.OPER_SE_NM || null,       // 시간제 등
-    capacity: num(r.TPKCT) || null,       // 총 주차면수 (규모)
+    capacity: (l ? num(l.TPKCT) : 0) || slots || null,   // 총 주차면수 (규모)
     paid: (l?.PAY_YN ?? r.CHGD_FREE_SE) === "Y",
     nightOpen: (l?.NGHT_PAY_YN ?? r.NGHT_FREE_OPN_YN) === "Y",
     satFree: (l?.SAT_CHGD_FREE_SE ?? r.SAT_CHGD_FREE_SE) !== "Y",

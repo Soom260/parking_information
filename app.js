@@ -1,10 +1,10 @@
 "use strict";
 
 // ---------- 상태 ----------
-const RADII = [100, 300, 500, 1000];
+const RADII = [100, 500, 1000, 3000];
 const state = {
   center: null,        // { lat, lng, label }
-  radius: 500,
+  radius: 1000,
   parkings: [],        // 정적 데이터
   live: new Map(),     // id -> { free, capacity }
   liveStamp: null,
@@ -406,7 +406,7 @@ async function main() {
   $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchPlace(); });
   $("radius").addEventListener("input", (e) => {
     state.radius = RADII[Number(e.target.value)];
-    $("radius-out").textContent = state.radius >= 1000 ? "1km" : state.radius + "m";
+    $("radius-out").textContent = state.radius >= 1000 ? state.radius / 1000 + "km" : state.radius + "m";
     findNearby();
   });
   $("calc-parking").addEventListener("change", runCalc);
