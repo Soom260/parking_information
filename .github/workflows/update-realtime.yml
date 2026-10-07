@@ -27,6 +27,9 @@ jobs:
         env:
           SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
           KOTSA_API_KEY: ${{ secrets.KOTSA_API_KEY }}
+          # 이름을 PARK_1 / PARK_2 로 넣어둔 경우도 받는다 (키 길이로 자동 구분)
+          PARK_1: ${{ secrets.PARK_1 }}
+          PARK_2: ${{ secrets.PARK_2 }}
         run: node scripts/build-realtime.mjs
 
       - name: 바뀌었으면 저장소에 올리기

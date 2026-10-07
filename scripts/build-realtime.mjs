@@ -23,6 +23,26 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
+// 깃허브 Secrets 이름이 PARK_1 / PARK_2 처럼 어느 쪽이 어느 키인지 모를 때를 대비해
+// 키 길이로 구분한다. 서울시 인증키는 30자 안팎, 공공데이터포털 일반 인증키는 64자다.
+function resolveKeys() {
+  let seoul = process.env.SEOUL_API_KEY || null;
+  let kotsa = process.env.KOTSA_API_KEY || null;
+
+  const spares = Object.entries(process.env)
+    .filter(([k]) => /^PARK_\d+$/.test(k))
+    .map(([, v]) => (v || "").trim())
+    .filter(Boolean);
+
+  for (const v of spares) {
+    if (v.length >= 50) { if (!kotsa) kotsa = v; }
+    else if (!seoul) seoul = v;
+  }
+  return { seoul, kotsa };
+}
+
+const KEYS = resolveKeys();
+
 // 서울시 시영주차장 실시간 정보 — 주차장 이름으로 맞춘다
 async function seoulLive(key) {
   const out = {};
@@ -68,9 +88,9 @@ async function kotsaLive(key) {
 const live = {};
 const errors = [];
 
-if (process.env.SEOUL_API_KEY) {
+if (KEYS.seoul) {
   try {
-    const o = await seoulLive(process.env.SEOUL_API_KEY);
+    const o = await seoulLive(KEYS.seoul);
     Object.assign(live, o);
     console.log(`서울시 시영주차장 실시간 ${Object.keys(o).length}곳`);
   } catch (e) {
@@ -78,12 +98,12 @@ if (process.env.SEOUL_API_KEY) {
     console.error("서울시 실패:", e.message);
   }
 } else {
-  errors.push("SEOUL_API_KEY 가 없습니다");
+  errors.push("서울시 인증키를 찾지 못했습니다 (SEOUL_API_KEY 또는 PARK_n)");
 }
 
-if (process.env.KOTSA_API_KEY) {
+if (KEYS.kotsa) {
   try {
-    const o = await kotsaLive(process.env.KOTSA_API_KEY);
+    const o = await kotsaLive(KEYS.kotsa);
     Object.assign(live, o);
     console.log(`교통안전공단 실시간 ${Object.keys(o).length}곳`);
   } catch (e) {
@@ -91,7 +111,7 @@ if (process.env.KOTSA_API_KEY) {
     console.error("교통안전공단 실패:", e.message);
   }
 } else {
-  errors.push("KOTSA_API_KEY 가 없습니다");
+  errors.push("교통안전공단 인증키를 찾지 못했습니다 (KOTSA_API_KEY 또는 PARK_n)");
 }
 
 // 한 곳도 못 받았으면 기존 파일을 덮어쓰지 않는다 (빈 화면이 되지 않게)
