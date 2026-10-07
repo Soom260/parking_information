@@ -5,12 +5,10 @@ const RADII = [100, 500, 1000, 3000];
 const state = {
   center: null,        // { lat, lng, label }
   radius: 1000,
-  parkings: [],        // 정적 데이터
-  live: new Map(),     // id -> { free, capacity }
+  parkings: [],        // 정적 데이터 (좌표 있는 것만)
+  live: new Map(),     // "N:주차장이름" -> { free, capacity, updatedAt }
   liveStamp: null,
   nearby: [],
-  kakao: null,
-  markers: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -81,94 +79,30 @@ async function loadStatic() {
   if (!res.ok) throw new Error("주차장 데이터를 불러오지 못했습니다");
   const json = await res.json();
   state.parkings = json.parkings.filter((p) => p.lat && p.lng);
-  return json;
 }
 
+// 실시간 빈자리는 GitHub Actions 가 10분마다 만들어 두는 파일에서 읽는다.
+// (인증키는 깃허브 서버 안에서만 쓰이고, 화면에는 결과 숫자만 내려온다)
 async function loadLive() {
   try {
-    const res = await fetch("api/realtime");
+    const res = await fetch("data/realtime.json?t=" + Date.now());
     if (!res.ok) return;
     const json = await res.json();
     state.live = new Map(Object.entries(json.live || {}));
     state.liveStamp = json.updatedAt || null;
   } catch {
-    /* 실시간은 없어도 나머지는 보여준다 */
+    /* 실시간이 없어도 나머지는 보여준다 */
   }
 }
 
-// ---------- 지도 ----------
-async function initMap() {
-  let key = null;
-  try {
-    const res = await fetch("api/config");
-    if (res.ok) key = (await res.json()).kakaoJsKey || null;
-  } catch { /* 키가 없으면 간이 지도로 */ }
-  if (!key) return;
-
-  const ok = await new Promise((resolve) => {
-    const s = document.createElement("script");
-    s.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=" + key + "&autoload=false&libraries=services";
-    s.onload = () => resolve(true);
-    s.onerror = () => resolve(false);
-    document.head.appendChild(s);
-  });
-  if (!ok || !window.kakao || !window.kakao.maps) return;
-
-  await new Promise((r) => window.kakao.maps.load(r));
-  $("map").style.display = "block";
-  $("map-fallback").hidden = true;
-  state.kakao = new window.kakao.maps.Map($("map"), {
-    center: new window.kakao.maps.LatLng(37.5665, 126.978),
-    level: 5,
-  });
-}
-
-function drawMap() {
-  if (!state.center) return;
-  if (state.kakao) drawKakao();
-  else drawMini();
-}
-
-function drawKakao() {
-  const maps = window.kakao.maps;
-  state.markers.forEach((m) => m.setMap(null));
-  state.markers = [];
-
-  const c = new maps.LatLng(state.center.lat, state.center.lng);
-  state.kakao.setCenter(c);
-  state.kakao.setLevel(state.radius <= 100 ? 2 : state.radius <= 300 ? 3 : state.radius <= 500 ? 4 : 5);
-
-  const here = new maps.Circle({
-    center: c, radius: 12, fillColor: "#b3261e", fillOpacity: 1,
-    strokeColor: "#ffffff", strokeWeight: 3,
-  });
-  here.setMap(state.kakao);
-  state.markers.push(here);
-
-  const ring = new maps.Circle({
-    center: c, radius: state.radius, strokeColor: "#2b6cb0", strokeWeight: 2,
-    strokeOpacity: 0.7, strokeStyle: "dash", fillColor: "#2b6cb0", fillOpacity: 0.06,
-  });
-  ring.setMap(state.kakao);
-  state.markers.push(ring);
-
-  for (const pk of state.nearby) {
-    const mk = new maps.Marker({ position: new maps.LatLng(pk.lat, pk.lng), title: pk.name });
-    mk.setMap(state.kakao);
-    const iw = new maps.InfoWindow({
-      content: '<div style="padding:6px 10px;font-size:13px">' + esc(pk.name) + "</div>",
-    });
-    maps.event.addListener(mk, "click", () => iw.open(state.kakao, mk));
-    state.markers.push(mk);
-  }
-}
-
-// 카카오 키가 없을 때 쓰는 간이 지도 (SVG)
+// ---------- 간이 지도 ----------
 function drawMini() {
   const svg = $("mini-map");
-  const W = 400, H = 300, pad = 26;
+  if (!state.center) { svg.innerHTML = ""; return; }
+
+  const W = 400, H = 300, pad = 30;
   const r = state.radius;
-  const span = r * 1.15;
+  const span = r * 1.18;
   const mPerDegLat = 111320;
   const mPerDegLng = 111320 * Math.cos((state.center.lat * Math.PI) / 180);
   const scale = Math.min(W - pad * 2, H - pad * 2) / (span * 2);
@@ -176,24 +110,38 @@ function drawMini() {
   const px = (lng) => W / 2 + (lng - state.center.lng) * mPerDegLng * scale;
   const py = (lat) => H / 2 - (lat - state.center.lat) * mPerDegLat * scale;
 
+  const label = r >= 1000 ? r / 1000 + "km" : r + "m";
   const parts = [
     '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#eef2f7"/>',
+    // 범위 안쪽 절반 지점 안내선
+    '<circle cx="' + W / 2 + '" cy="' + H / 2 + '" r="' + (r / 2) * scale +
+      '" fill="none" stroke="#c7d2e0" stroke-width="1" stroke-dasharray="3 4"/>',
     '<circle cx="' + W / 2 + '" cy="' + H / 2 + '" r="' + r * scale +
       '" fill="#2b6cb0" fill-opacity="0.07" stroke="#2b6cb0" stroke-opacity="0.6" stroke-width="1.5" stroke-dasharray="5 4"/>',
-    '<text x="' + W / 2 + '" y="' + (H / 2 - r * scale - 6) +
-      '" text-anchor="middle" font-size="11" fill="#5f6b7a">' + r + "m</text>",
+    '<text x="' + W / 2 + '" y="' + Math.max(12, H / 2 - r * scale - 6) +
+      '" text-anchor="middle" font-size="11" fill="#5f6b7a">' + label + "</text>",
   ];
 
   state.nearby.forEach((pk, i) => {
     const x = px(pk.lng), y = py(pk.lat);
-    parts.push('<circle cx="' + x + '" cy="' + y + '" r="7" fill="#2b6cb0" stroke="#fff" stroke-width="2"><title>' +
-      esc(pk.name) + " · " + Math.round(pk.dist) + "m</title></circle>");
+    const l = liveOf(pk);
+    // 빈자리 상태에 따라 점 색을 달리한다
+    let fill = "#2b6cb0";
+    if (l && Number.isFinite(l.free)) {
+      const ratio = l.capacity ? l.free / l.capacity : 1;
+      fill = l.free <= 0 ? "#b3261e" : ratio < 0.1 ? "#d97706" : "#1f8a4c";
+    }
+    parts.push('<circle cx="' + x + '" cy="' + y + '" r="8" fill="' + fill +
+      '" stroke="#fff" stroke-width="2"><title>' + esc(pk.name) + " · " + Math.round(pk.dist) + "m" +
+      (l && Number.isFinite(l.free) ? " · 빈자리 " + l.free + "면" : "") + "</title></circle>");
     parts.push('<text x="' + x + '" y="' + (y + 3.5) +
-      '" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" pointer-events="none">' + (i + 1) + "</text>");
+      '" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fff" pointer-events="none">' + (i + 1) + "</text>");
   });
 
-  parts.push('<circle cx="' + W / 2 + '" cy="' + H / 2 + '" r="8" fill="#b3261e" stroke="#fff" stroke-width="3"><title>기준 위치</title></circle>');
-  parts.push('<text x="' + W / 2 + '" y="' + (H / 2 + 24) + '" text-anchor="middle" font-size="11" font-weight="700" fill="#b3261e">기준 위치</text>');
+  parts.push('<circle cx="' + W / 2 + '" cy="' + H / 2 + '" r="8" fill="#b3261e" stroke="#fff" stroke-width="3"><title>' +
+    esc(state.center.label) + "</title></circle>");
+  parts.push('<text x="' + W / 2 + '" y="' + (H / 2 + 24) +
+    '" text-anchor="middle" font-size="11" font-weight="700" fill="#b3261e">' + esc(state.center.label) + "</text>");
 
   svg.innerHTML = parts.join("");
 }
@@ -207,12 +155,12 @@ function findNearby() {
     .sort((a, b) => a.dist - b.dist)
     .slice(0, 50);
   renderList();
-  drawMap();
+  drawMini();
   fillCalcSelect();
 }
 
 function liveOf(pk) {
-  return state.live.get(pk.id) || (pk.liveName ? state.live.get("N:" + pk.liveName) : null) || null;
+  return (pk.liveName ? state.live.get("N:" + pk.liveName) : null) || state.live.get(pk.id) || null;
 }
 
 function renderList() {
@@ -221,18 +169,19 @@ function renderList() {
   $("count").textContent = state.nearby.length ? state.nearby.length + "곳" : "";
   $("live-stamp").textContent = state.liveStamp
     ? "실시간 빈자리 기준 시각: " + new Date(state.liveStamp).toLocaleString("ko-KR")
-    : "실시간 빈자리는 배포 후(또는 로컬 서버 실행 시) 표시됩니다.";
+    : "실시간 빈자리 정보를 아직 못 받았습니다.";
 
   if (!state.center) {
     ul.innerHTML = "";
     empty.hidden = false;
-    empty.textContent = "위에서 기준 위치를 먼저 정해주세요.";
+    empty.textContent = '위에서 "현 위치로 찾기"를 먼저 눌러주세요.';
     return;
   }
   if (!state.nearby.length) {
     ul.innerHTML = "";
     empty.hidden = false;
-    empty.textContent = state.radius + "m 안에 등록된 주차장이 없습니다. 찾는 범위를 넓혀 보세요.";
+    empty.textContent = (state.radius >= 1000 ? state.radius / 1000 + "km" : state.radius + "m") +
+      " 안에 시영주차장이 없습니다. 찾는 범위를 넓혀 보세요.";
     return;
   }
   empty.hidden = true;
@@ -291,11 +240,11 @@ function renderList() {
   });
 }
 
-// ---------- 요금 계산기 UI ----------
+// ---------- 요금 계산기 ----------
 function fillCalcSelect() {
   const sel = $("calc-parking");
   const keep = sel.value;
-  const opts = state.nearby.length ? state.nearby : state.parkings.slice(0, 200);
+  const opts = state.nearby.length ? state.nearby : state.parkings;
   sel.innerHTML = '<option value="">주차장을 고르세요</option>' +
     opts.map((p) => '<option value="' + esc(p.id) + '">' + esc(p.name) +
       (p.dist ? " (" + Math.round(p.dist) + "m)" : "") + "</option>").join("");
@@ -346,64 +295,27 @@ function setCenter(lat, lng, label) {
 
 function useHere() {
   if (!navigator.geolocation) {
-    alert("이 브라우저는 현 위치를 지원하지 않습니다. 장소 이름으로 검색해 주세요.");
+    $("center-label").textContent = "이 브라우저는 현 위치를 지원하지 않습니다.";
+    $("fallback-row").hidden = false;
     return;
   }
   $("center-label").textContent = "현 위치를 찾는 중…";
   navigator.geolocation.getCurrentPosition(
     (pos) => setCenter(pos.coords.latitude, pos.coords.longitude, "현 위치"),
-    () => { $("center-label").textContent = "현 위치를 못 받았습니다. 장소 이름으로 검색해 주세요."; },
+    (err) => {
+      $("center-label").textContent = err.code === 1
+        ? "위치 권한이 거절됐습니다. 브라우저 주소창의 자물쇠에서 위치를 허용해 주세요."
+        : "현 위치를 못 받았습니다.";
+      $("fallback-row").hidden = false;
+    },
     { enableHighAccuracy: true, timeout: 10000 }
   );
-}
-
-async function searchPlace() {
-  const q = $("q").value.trim();
-  if (!q) return;
-  const box = $("place-results");
-  box.hidden = false;
-  box.innerHTML = "<button disabled>찾는 중…</button>";
-
-  let items = [];
-  try {
-    const res = await fetch("api/places?q=" + encodeURIComponent(q));
-    if (res.ok) items = (await res.json()).places || [];
-  } catch { /* 아래에서 대체 검색 */ }
-
-  // 카카오 키가 없으면 주차장 이름/주소로라도 찾아준다
-  let fallback = false;
-  if (!items.length) {
-    fallback = true;
-    items = state.parkings
-      .filter((p) => p.name.includes(q) || p.addr.includes(q))
-      .slice(0, 8)
-      .map((p) => ({ name: p.name, addr: p.addr, lat: p.lat, lng: p.lng }));
-  }
-
-  if (!items.length) {
-    box.innerHTML = "<button disabled>&quot;" + esc(q) + "&quot; 을(를) 찾지 못했습니다." +
-      (fallback ? " 카카오 키를 넣으면 가게 이름으로도 찾을 수 있습니다." : "") + "</button>";
-    return;
-  }
-
-  box.innerHTML = items.map((p, i) =>
-    '<button data-i="' + i + '"><span class="pname">' + esc(p.name) +
-    '</span><br><span class="paddr">' + esc(p.addr || "") + "</span></button>"
-  ).join("");
-  box.querySelectorAll("[data-i]").forEach((b) => {
-    b.addEventListener("click", () => {
-      const p = items[Number(b.dataset.i)];
-      box.hidden = true;
-      setCenter(p.lat, p.lng, p.name);
-    });
-  });
 }
 
 // ---------- 시작 ----------
 async function main() {
   $("btn-here").addEventListener("click", useHere);
-  $("btn-search").addEventListener("click", searchPlace);
-  $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchPlace(); });
+  $("btn-cityhall").addEventListener("click", () => setCenter(37.5663, 126.9779, "서울시청"));
   $("radius").addEventListener("input", (e) => {
     state.radius = RADII[Number(e.target.value)];
     $("radius-out").textContent = state.radius >= 1000 ? state.radius / 1000 + "km" : state.radius + "m";
@@ -414,14 +326,13 @@ async function main() {
   $("btn-now").addEventListener("click", () => { setCalcTimeNow(); runCalc(); });
 
   await loadStatic();
+  await loadLive();
   fillCalcSelect();
   renderList();
-  await Promise.all([loadLive(), initMap()]);
-  renderList();
 
-  // 요금은 1분마다 다시 계산하고, 실시간 빈자리는 3분마다 새로 받는다
+  // 요금은 1분마다 다시 계산하고, 실시간 빈자리 파일은 5분마다 새로 읽는다
   setInterval(runCalc, 60000);
-  setInterval(async () => { await loadLive(); renderList(); }, 180000);
+  setInterval(async () => { await loadLive(); renderList(); drawMini(); }, 300000);
 }
 
 main().catch((e) => {

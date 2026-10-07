@@ -9,7 +9,7 @@
 <body>
 <header>
   <h1>주차장 찾기</h1>
-  <p class="sub">내 위치나 가게 이름을 넣으면 주변 주차장과 지금 빈자리를 보여줍니다 · 서울시 시영주차장 117곳</p>
+  <p class="sub">현 위치 주변 주차장과 지금 빈자리를 보여줍니다 · 서울시 시영주차장 117곳</p>
 </header>
 
 <main>
@@ -18,33 +18,29 @@
     <h2>어디를 기준으로 찾을까요?</h2>
     <div class="row">
       <button id="btn-here" class="primary">현 위치로 찾기</button>
-      <span class="or">또는</span>
-      <input id="q" type="search" placeholder="예: 홍대입구역 교촌치킨, 성수동 카페" autocomplete="off">
-      <button id="btn-search">검색</button>
     </div>
-    <div id="place-results" class="place-results" hidden></div>
     <div class="row radius-row">
       <label for="radius">찾는 범위</label>
       <input id="radius" type="range" min="0" max="3" step="1" value="2">
       <output id="radius-out">1km</output>
     </div>
-    <p id="center-label" class="center-label">아직 기준 위치가 없습니다.</p>
+    <p id="center-label" class="center-label">아직 기준 위치가 없습니다. "현 위치로 찾기"를 눌러주세요.</p>
+    <p id="fallback-row" class="center-label" hidden>
+      현 위치를 못 받았을 때는 <button id="btn-cityhall" class="link">서울시청 기준으로 보기</button>
+    </p>
   </section>
 
   <!-- 2. 지도 -->
   <section class="card">
     <h2>지도</h2>
     <div id="map-wrap">
-      <div id="map"></div>
-      <div id="map-fallback">
-        <svg id="mini-map" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" role="img"
-             aria-label="기준 위치와 주변 주차장 위치를 점으로 표시한 간이 지도"></svg>
-        <p class="map-note">
-          카카오 지도 키를 넣으면 이 자리에 실제 지도가 뜹니다.
-          지금은 <b>간이 지도</b>로 기준 위치(빨간 점)와 주차장(파란 점)의 상대 위치를 보여줍니다.
-        </p>
-      </div>
+      <svg id="mini-map" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" role="img"
+           aria-label="기준 위치와 주변 주차장 위치를 점으로 표시한 간이 지도"></svg>
     </div>
+    <p class="map-note">
+      간이 지도입니다. <b>빨간 점</b>이 현 위치, <b>파란 점</b>이 주차장이고 번호는 아래 목록 순서와 같습니다.
+      점에 손가락이나 마우스를 올리면 이름과 거리가 나옵니다.
+    </p>
   </section>
 
   <!-- 3. 주차장 목록 -->
@@ -61,7 +57,7 @@
     <p class="hint">주차장을 고르고 주차한 시각을 넣으면, 지금까지 쌓인 요금을 1분마다 다시 계산합니다.</p>
     <div class="row">
       <label for="calc-parking">주차장</label>
-      <select id="calc-parking"><option value="">목록에서 "여기 주차함"을 누르거나 직접 고르세요</option></select>
+      <select id="calc-parking"><option value="">주차장을 고르세요</option></select>
     </div>
     <div class="row">
       <label for="calc-time">주차한 시각</label>
@@ -73,7 +69,7 @@
 </main>
 
 <footer>
-  <p>자료: 서울시 열린데이터광장(공영·시영주차장) · 한국교통안전공단 주차정보(실시간) · 장소 검색: 카카오</p>
+  <p>자료: 서울시 열린데이터광장(공영·시영주차장) · 한국교통안전공단 주차정보(실시간 빈자리)</p>
   <p class="warn">요금은 공개된 기본·추가 요금으로 계산한 <b>참고값</b>입니다. 실제 정산 금액과 다를 수 있습니다.</p>
 </footer>
 
