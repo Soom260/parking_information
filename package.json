@@ -1,0 +1,10 @@
+{
+  "name": "parking-finder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "서울시 공영주차장과 한국교통안전공단 주차정보로 주변 주차장을 찾고 요금을 계산한다",
+  "scripts": {
+    "start": "node server.mjs",
+    "build-data": "node scripts/build-data.mjs"
+  }
+}

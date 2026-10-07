@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/realtime", "destination": "/api/realtime" },
+    { "source": "/api/places", "destination": "/api/places" },
+    { "source": "/api/config", "destination": "/api/config" }
+  ]
+}
